@@ -1,4 +1,6 @@
 import PyPDF2
+from PyPDF2.filters import *
+import copy
 import os
 import sys
 from PIL import Image
@@ -13,10 +15,10 @@ import numpy as np
 # Referenced source: https://stackoverflow.com/questions/2693820/extract-images-from-pdf-without-resampling-in-python
 ###
 
-TEST_FILE = "/Temp/(B090)온맵_37612068.pdf"
+TEST_FILE = "/Temp/book2.pdf"
 TEST_OUT_FOLDER = "/Temp"
 TEST_PAGE = None
-DEBUG_MODE = True
+DEBUG_MODE = False
 DEFAULT_PALETTE = b'\xff\xff\xff\xfe\xfe\xfe\xfd\xfd\xfd\xfc\xfc\xfc\xfb\xfb\xfb' \
                   b'\xfa\xfa\xfa\xf9\xf9\xf9\xf8\xf8\xf8\xf7\xf7\xf7\xf6\xf6\xf6' \
                   b'\xf5\xf5\xf5\xf4\xf4\xf4\xf3\xf3\xf3\xf2\xf2\xf2\xf1\xf1\xf1' \
@@ -98,7 +100,7 @@ def main():
         if targetPage and (iPage+1 != targetPage):
             print("Skip page {}.".format(iPage + 1))
             continue
-        print("Processing page {}...".format(iPage+1))
+        print("Processing page {} of {}...".format(iPage+1, pdfObj.numPages))
 
         try:
             xObject = pageObj['/Resources']['/XObject'].getObject()
@@ -134,7 +136,7 @@ def main():
                     palette = DEFAULT_PALETTE
                 else:
                     mode = "P"
-                    if hasattr(colorSpace, "__len__"):
+                    if type(filters) is PyPDF2.generic.ArrayObject:
                         lookup = colorSpace[1].getObject()
                         palette = lookup.getData()
                         print("[FILE]"+fileName+" [MODE] "+colorSpace[0]+" [FILTER]"+xObject[obj]['/Filter'])
@@ -143,84 +145,83 @@ def main():
                         print("[FILE]"+fileName+" [MODE]: "+colorSpace+" [FILTER]"+xObject[obj]['/Filter'])
 
                 try:
-                    # case of Flat image
-                    if xObject[obj]['/Filter'] == '/FlateDecode':
-                        data = xObject[obj].getData()
-                        img = Image.frombytes(mode, size, data)
-                        if mode == "P":
-                            img.putpalette(palette)
-                        if mode == "CMYK":
-                            img = img.convert('RGB')
-                        img.save(outFileName + ".png")
+                    stream = xObject[obj]
+                    data = stream._data
+                    filters = stream.get("/Filter", ())
+                    if type(filters) is not PyPDF2.generic.ArrayObject:
+                        filters = [filters]
+                    leftFilters = copy.deepcopy(filters)
 
-                    # case of JPEG
-                    elif xObject[obj]['/Filter'] == '/DCTDecode':
-                        data = xObject[obj]._data
+                    if data:
+                        for filterType in filters:
+                            if filterType == "/FlateDecode" or filterType == "/Fl":
+                                data = FlateDecode.decode(data, stream.get("/DecodeParms"))
+                                leftFilters.remove(filterType)
+                            elif filterType == "/ASCIIHexDecode" or filterType == "/AHx":
+                                data = ASCIIHexDecode.decode(data)
+                                leftFilters.remove(filterType)
+                            elif filterType == "/LZWDecode" or filterType == "/LZW":
+                                data = LZWDecode.decode(data, stream.get("/DecodeParms"))
+                                leftFilters.remove(filterType)
+                            elif filterType == "/ASCII85Decode" or filterType == "/A85":
+                                data = ASCII85Decode.decode(data)
+                                leftFilters.remove(filterType)
+                            elif filterType == "/Crypt":
+                                decodeParams = stream.get("/DecodeParams", {})
+                                if "/Name" not in decodeParams and "/Type" not in decodeParams:
+                                    pass
+                                else:
+                                    raise NotImplementedError("/Crypt filter with /Name or /Type not supported yet")
+                                leftFilters.remove(filterType)
 
-                        jpgData = BytesIO(data)
-                        img = Image.open(jpgData)
-                        if mode == "CMYK":
-                            # case of CMYK invert all channel
+                        # case of Flat image
+                        if len(leftFilters) == 0:
+                            img = Image.frombytes(mode, size, data)
+                            if mode == "P":
+                                img.putpalette(palette)
+                            if mode == "CMYK":
+                                img = img.convert('RGB')
+                            img.save(outFileName + ".png")
 
-                            # imgData = list(img.tobytes())
-                            # invData = [(255 - val) & 0xff for val in imgData]
-                            # data = struct.pack("{}B".format(len(invData)), *invData)
-                            # img = Image.frombytes(img.mode, img.size, data)
+                        # case of JPEG
+                        elif len(leftFilters) == 1 and leftFilters[0] == '/DCTDecode':
+                            jpgData = BytesIO(data)
+                            img = Image.open(jpgData)
+                            if mode == "CMYK":
+                                # case of CMYK invert all channel
 
-                            imgData = np.frombuffer(img.tobytes(), dtype='B')
-                            invData = np.full(imgData.shape, 255, dtype='B')
-                            invData -= imgData
-                            img = Image.frombytes(img.mode, img.size, invData.tobytes())
-                        img.save(outFileName + ".jpg")
+                                # imgData = list(img.tobytes())
+                                # invData = [(255 - val) & 0xff for val in imgData]
+                                # data = struct.pack("{}B".format(len(invData)), *invData)
+                                # img = Image.frombytes(img.mode, img.size, data)
 
-                    # case of JPEG2000
-                    elif xObject[obj]['/Filter'] == '/JPXDecode':
-                        data = xObject[obj]._data
-                        img = open(outFileName + ".jp2", "wb")
-                        img.write(data)
-                        img.close()
+                                imgData = np.frombuffer(img.tobytes(), dtype='B')
+                                invData = np.full(imgData.shape, 255, dtype='B')
+                                invData -= imgData
+                                img = Image.frombytes(img.mode, img.size, invData.tobytes())
+                            img.save(outFileName + ".jpg")
 
-                    # case of TIFF
-                    elif xObject[obj]['/Filter'] == '/CCITTFaxDecode':
-                        if xObject[obj]['/DecodeParms']['/K'] == -1:
-                            CCITT_group = 4
-                        else:
-                            CCITT_group = 3
-                        width = xObject[obj]['/Width']
-                        height = xObject[obj]['/Height']
-                        data = xObject[obj]._data  # sorry, getData() does not work for CCITTFaxDecode
-                        img_size = len(data)
-                        tiff_header = tiff_header_for_CCITT(width, height, img_size, CCITT_group)
-                        with open(outFileName + ".tif", 'wb') as img_file:
-                            img_file.write(tiff_header + data)
+                        # case of JPEG2000
+                        elif len(leftFilters) == 1 and leftFilters[0] == '/JPXDecode':
+                            img = open(outFileName + ".jp2", "wb")
+                            img.write(data)
+                            img.close()
 
-                    # case of A85 + JPEG
-                    elif hasattr(xObject[obj]['/Filter'], "__len__") \
-                            and xObject[obj]['/Filter'][0] == "/ASCII85Decode" \
-                            and xObject[obj]['/Filter'][1] == "/DCTDecode":
-                        rawData = xObject[obj]._data
+                        # case of TIFF
+                        elif len(leftFilters) == 1 and leftFilters[0] == '/CCITTFaxDecode':
+                            if xObject[obj]['/DecodeParms']['/K'] == -1:
+                                CCITT_group = 4
+                            else:
+                                CCITT_group = 3
+                            width = xObject[obj]['/Width']
+                            height = xObject[obj]['/Height']
+                            img_size = len(data)
+                            tiff_header = tiff_header_for_CCITT(width, height, img_size, CCITT_group)
+                            with open(outFileName + ".tif", 'wb') as img_file:
+                                img_file.write(tiff_header + data)
 
-                        data = PyPDF2.filters.ASCII85Decode.decode(rawData)
-
-                        jpgData = BytesIO(data)
-                        img = Image.open(jpgData)
-                        if mode == "CMYK":
-                            # case of CMYK invert all channel
-
-                            # imgData = list(img.tobytes())
-                            # invData = [(255 - val) & 0xff for val in imgData]
-                            # data = struct.pack("{}B".format(len(invData)), *invData)
-                            # img = Image.frombytes(img.mode, img.size, data)
-
-                            imgData = np.frombuffer(img.tobytes(), dtype='B')
-                            invData = np.full(imgData.shape, 255, dtype='B')
-                            invData -= imgData
-                            img = Image.frombytes(img.mode, img.size, invData.tobytes())
-                        img.save(outFileName + ".jpg")
-
-                    else:
-                        print("[WARING] Unknown filter: "+str(xObject[obj]['/Filter']))
-
+                        elif len(leftFilters) >= 1:
+                            print("[WARING] Unknown filter: "+leftFilters)
 
                 except Exception as ex:
                     print("[ERROR] "+fileName)
@@ -244,22 +245,6 @@ def tiff_header_for_CCITT(width, height, img_size, CCITT_group=4):
                        279, 4, 1, img_size,  # StripByteCounts, LONG, 1, size of image
                        0  # last IFD
                        )
-
-
-def isFilter(xObj, typeStr):
-    try:
-        testObj = xObj['/Filter']
-        if hasattr(testObj, "__len__"):
-            for item in testObj:
-                if item == typeStr:
-                    return True
-        else:
-            if testObj == typeStr:
-                return True
-    except ValueError:
-        return False
-
-    return False
 
 
 if __name__ == '__main__':
