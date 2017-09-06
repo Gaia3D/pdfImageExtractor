@@ -57,7 +57,9 @@ DEFAULT_PALETTE = b'\xff\xff\xff\xfe\xfe\xfe\xfd\xfd\xfd\xfc\xfc\xfc\xfb\xfb\xfb
 
 
 def parseParam():
-    sourceName, outputFolder, targetPage = None
+    sourceName = None
+    outputFolder = None
+    targetPage = None
 
     if len(sys.argv) <= 1:
         if not DEBUG_MODE:
@@ -78,7 +80,7 @@ def parseParam():
                 targetPage = int(sys.argv[3])
             except ValueError:
                 targetPage = None
-    return sourceName, outputFolder, targetPage
+    return (sourceName, outputFolder, targetPage)
 
 
 def printHelp():
@@ -177,6 +179,7 @@ def main():
                 except Exception as ex:
                     print("[ERROR] "+fileName)
                     print("\t" + str(ex))
+    print("Completed.")
 
 
 if __name__ == '__main__':
