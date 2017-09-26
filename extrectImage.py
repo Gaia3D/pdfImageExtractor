@@ -15,10 +15,10 @@ import numpy as np
 # Referenced source: https://stackoverflow.com/questions/2693820/extract-images-from-pdf-without-resampling-in-python
 ###
 
-TEST_FILE = "/Temp/map_25k.pdf"
+TEST_FILE = "/Temp/map_50k.pdf"
 TEST_OUT_FOLDER = "/Temp"
 TEST_PAGE = None
-DEBUG_MODE = True
+DEBUG_MODE = False
 DEFAULT_PALETTE = b'\xff\xff\xff\xfe\xfe\xfe\xfd\xfd\xfd\xfc\xfc\xfc\xfb\xfb\xfb' \
                   b'\xfa\xfa\xfa\xf9\xf9\xf9\xf8\xf8\xf8\xf7\xf7\xf7\xf6\xf6\xf6' \
                   b'\xf5\xf5\xf5\xf4\xf4\xf4\xf3\xf3\xf3\xf2\xf2\xf2\xf1\xf1\xf1' \
