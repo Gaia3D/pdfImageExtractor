@@ -15,10 +15,10 @@ import numpy as np
 # Referenced source: https://stackoverflow.com/questions/2693820/extract-images-from-pdf-without-resampling-in-python
 ###
 
-TEST_FILE = "/Temp/book2.pdf"
+TEST_FILE = "/Temp/map_25k.pdf"
 TEST_OUT_FOLDER = "/Temp"
 TEST_PAGE = None
-DEBUG_MODE = False
+DEBUG_MODE = True
 DEFAULT_PALETTE = b'\xff\xff\xff\xfe\xfe\xfe\xfd\xfd\xfd\xfc\xfc\xfc\xfb\xfb\xfb' \
                   b'\xfa\xfa\xfa\xf9\xf9\xf9\xf8\xf8\xf8\xf7\xf7\xf7\xf6\xf6\xf6' \
                   b'\xf5\xf5\xf5\xf4\xf4\xf4\xf3\xf3\xf3\xf2\xf2\xf2\xf1\xf1\xf1' \
@@ -122,6 +122,8 @@ def main():
                     mode = "RGB"
                 elif colorSpace == '/DeviceCMYK':
                     mode = "CMYK"
+                elif colorSpace == '/DeviceGray':
+                    mode = "L"
                 elif colorSpace[0] == "/Indexed":
                     mode = "P"
                     colorSpace, base, hival, lookup = [v.getObject() for v in colorSpace]
@@ -135,6 +137,9 @@ def main():
                     mode = "P"
                     palette = DEFAULT_PALETTE
                 else:
+                    print("[ERROR] Unknown mode: {}".format(colorSpace))
+                    continue
+
                     mode = "P"
                     if type(filters) is PyPDF2.generic.ArrayObject:
                         lookup = colorSpace[1].getObject()
@@ -173,6 +178,9 @@ def main():
                                 else:
                                     raise NotImplementedError("/Crypt filter with /Name or /Type not supported yet")
                                 leftFilters.remove(filterType)
+                            elif filterType == ():
+                                leftFilters.remove(filterType)
+
 
                         # case of Flat image
                         if len(leftFilters) == 0:
